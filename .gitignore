@@ -65,6 +65,7 @@ dmypy.json
 
 #Static Files
 static_files
+static
 static/js/bootstrap.js
 static/js/bootstrap.min.js
 static/js/jquery-3.4.1.min.js
