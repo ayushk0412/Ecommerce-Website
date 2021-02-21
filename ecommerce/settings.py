@@ -123,5 +123,7 @@ if ENVIRONMENT == 'production':
 
 CRISPY_TEMPLATE_PACK = 'bootstrap4'
 
-# STRIPE
+
 STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY')
+STRIPE_PUBLIC_KEY = os.environ.get('STRIPE_PUBLIC_KEY')
+STRIPE_WEBHOOK_KEY = os.environ.get('STRIPE_WEBHOOK_KEY')

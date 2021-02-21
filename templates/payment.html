@@ -271,8 +271,12 @@
 <script src="https://js.stripe.com/v3/"></script>
 <script nonce="">
   // Create a Stripe client.
-  //var stripe = Stripe("{STRIPE_PUBLIC_KEY}");
-
+  var stripe = Stripe(
+    "pk_test_51IIMy7ImMHLhvBYYZk0gPxzp2IGX522KJ0SqbCC4p5pan22UvcqXA2Q8hbH6OlKcw2U0sPiHdp6gi2j5XpctOrx400NS7Mv57K"
+  );
+  //var stripe = Stripe(
+  //  "pk_live_51IIMy7ImMHLhvBYYwhoYDcSQPIzbljbQmKMeIexANPkkfxtmsDAcVB7pjmLi8S0VfcgRkMrraaKSr1GR1fdqSGke00BuRorFjn"
+  //);
   // Create an instance of Elements.
   var elements = stripe.elements();
 
@@ -340,7 +344,7 @@
     // Submit the form
     form.submit();
   }
-
+  /*
   var currentCardForm = $(".current-card-form");
   var newCardForm = $(".new-card-form");
   var use_default_card = document.querySelector("input[name=use_default_card]");
@@ -352,7 +356,7 @@
       newCardForm.show();
       currentCardForm.hide();
     }
-  });
+  });*/
 </script>
 
 {% endblock extra_scripts %}

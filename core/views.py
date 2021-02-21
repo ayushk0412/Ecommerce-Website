@@ -1,7 +1,7 @@
 from django.shortcuts import render, get_object_or_404
 from .models import Item, OrderItem, Order, BillingAddress, Payment
 from .forms import CheckoutForm
-from django.views.generic import View, ListView, DetailView
+from django.views.generic import View, ListView, DetailView, TemplateView
 from django.shortcuts import redirect
 from django.utils import timezone
 from django.contrib import messages
@@ -9,8 +9,11 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.conf import settings
-
+from django.http import JsonResponse, HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.models import User
 import stripe
+
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
@@ -63,7 +66,6 @@ class CheckoutView(View):
                 #     'same_shipping_address')
                 # save_info = form.cleaned_data.get('save_info')
                 payment_option = form.cleaned_data.get('payment_option')
-                print("->", payment_option)
                 billing_address = BillingAddress(
                     user=self.request.user,
                     street_address=street_address,
@@ -89,58 +91,235 @@ class PaymentView(View):
     def post(self, *args, **kwargs):
         token = self.request.POST.get('stripeToken')
         order = Order.objects.get(user=self.request.user, ordered=False)
-        amount = order.get_total() * 100
+        amount = float(order.get_total() * 100)  # Rupees
 
         try:
             charge = stripe.Charge.create(
-                amount=amount,  # Rupees
+                amount=amount,
                 currency="inr",
                 source=token,
             )
+            # Create Payment
+            payment = Payment()
+            payment.stripe_charge_id = charge['id']
+            payment.user = self.request.user
+            payment.amount = order.get_total()
+            payment.save()
+
+            # Assign payment to order
+            order.ordered = True
+            order.payment = payment
+            order.save()
+
+            messages.success(self.request, "Your order was Successful.")
+            return redirect("/")
 
         except stripe.error.CardError as e:
-            # Since it's a decline, stripe.error.CardError will be caught
+            body = e.json_body
+            err = body.get('error', {})
+            messages.error(self.request, f"{err.get('message')}")
+            return redirect("/")
 
-            print('Status is: %s' % e.http_status)
-            print('Code is: %s' % e.code)
-            # param is '' in this case
-            print('Param is: %s' % e.param)
-            print('Message is: %s' % e.user_message)
         except stripe.error.RateLimitError as e:
             # Too many requests made to the API too quickly
-            pass
+            messages.error(self.request, "Rate Limit Error")
+            return redirect("/")
+
         except stripe.error.InvalidRequestError as e:
             # Invalid parameters were supplied to Stripe's API
-            pass
+            messages.error(self.request, "Invalid Request Error")
+            return redirect("/")
+
         except stripe.error.AuthenticationError as e:
             # Authentication with Stripe's API failed
             # (maybe you changed API keys recently)
-            pass
+            messages.error(self.request, "Authentication Error")
+            return redirect("/")
+
         except stripe.error.APIConnectionError as e:
             # Network communication with Stripe failed
-            pass
+            messages.error(self.request, "API Connection Error")
+            return redirect("/")
+
         except stripe.error.StripeError as e:
             # Display a very generic error to the user, and maybe send
             # yourself an email
-            pass
+            messages.error(
+                self.request, "Something went wrong, you were not charged. Please try again.")
+            return redirect("/")
+
         except Exception as e:
-            # Something else happened, completely unrelated to Stripe
-            pass
+            # Send an email to ourselves.
+            messages.error(
+                self.request, "Serious error occured, we have been notified.")
+            return redirect("/")
 
-        order.ordered = True
+# Testing the latest Stripe API
 
-        # Create Payment
-        payment = Payment()
-        payment.stripe_charge_id = charge['id']
-        payment.user = self.request.user
-        payment.amount = amount
-        payment.save()
 
-        # Assign payment to order
+class PaymentSuccess(TemplateView):
+    template_name = "success.html"
 
-        order.ordered = True
-        order.payment = payment
-        order.save()
+
+class PaymentCancel(TemplateView):
+    template_name = "cancel.html"
+
+
+class PaymentLanding(TemplateView):
+    template_name = "payment2.html"
+
+    def get_context_data(self, **kwargs):
+        order = Order.objects.get(user=self.request.user, ordered=False)
+
+        context = super(PaymentLanding,
+                        self).get_context_data(**kwargs)
+        context.update({
+            "STRIPE_PUBLIC_KEY": settings.STRIPE_PUBLIC_KEY,
+            "object": order,
+        })
+        return context
+
+
+class CheckoutSession(View):
+    # def get(self, *args, **kwargs):
+    #     return render(self.request, "payment2.html")
+
+    def post(self, *args, **kwargs):
+        YOUR_DOMAIN = "http://127.0.0.1:8000/"
+        order = Order.objects.get(user=self.request.user, ordered=False)
+        amount = int(order.get_total() * 100)  # Rupees
+        try:
+            checkout_session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
+                line_items=[
+                    {
+                        'price_data': {
+                            'currency': "inr",
+                            'unit_amount': amount,
+                            'product_data': {
+                                'name': 'Ecommerce',
+                                # 'images': ['https://i.imgur.com/EHyR2nP.png'],
+                            },
+                        },
+                        'quantity': 1,
+                    },
+                ],
+                metadata={
+                    'user': self.request.user,
+                    'user_id': self.request.user.id,
+                    'order_id': order.id,
+                },
+                mode='payment',
+                success_url=YOUR_DOMAIN + 'success',
+                cancel_url=YOUR_DOMAIN + 'cancel',
+            )
+            return JsonResponse({
+                'id': checkout_session.id
+            })
+            # # Create Payment
+            # payment = Payment()
+            # payment.stripe_charge_id = checkout_session.id
+            # payment.user = self.request.user
+            # payment.amount = order.get_total()
+            # payment.save()
+
+            # # Assign payment to order
+            # order.ordered = True
+            # order.payment = payment
+            # order.save()
+
+            messages.success(self.request, "Your order was Successful.")
+            return redirect("/")
+
+        except stripe.error.CardError as e:
+            body = e.json_body
+            err = body.get('error', {})
+            messages.error(self.request, f"{err.get('message')}")
+            return redirect("/")
+
+        except stripe.error.RateLimitError as e:
+            # Too many requests made to the API too quickly
+            messages.error(self.request, "Rate Limit Error")
+            return redirect("/")
+
+        except stripe.error.InvalidRequestError as e:
+            # Invalid parameters were supplied to Stripe's API
+            messages.error(self.request, "Invalid Request Error")
+            return redirect("/")
+
+        except stripe.error.AuthenticationError as e:
+            # Authentication with Stripe's API failed
+            # (maybe you changed API keys recently)
+            messages.error(self.request, "Authentication Error")
+            return redirect("/")
+
+        except stripe.error.APIConnectionError as e:
+            # Network communication with Stripe failed
+            messages.error(self.request, "API Connection Error")
+            return redirect("/")
+
+        except stripe.error.StripeError as e:
+            # Display a very generic error to the user, and maybe send
+            # yourself an email
+            messages.error(
+                self.request, "Something went wrong, you were not charged. Please try again.")
+            return redirect("/")
+
+        except Exception as e:
+            # Send an email to ourselves.
+            messages.error(
+                self.request, "Serious error occured, we have been notified.")
+            return redirect("/")
+
+
+@csrf_exempt
+def stripe_webhook(request):
+    payload = request.body
+    sig_header = request.META['HTTP_STRIPE_SIGNATURE']
+    event = None
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, settings.STRIPE_WEBHOOK_KEY
+        )
+    except ValueError as e:
+        # Invalid payload
+        return HttpResponse(status=400)
+    except stripe.error.SignatureVerificationError as e:
+        # Invalid signature
+        return HttpResponse(status=400)
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        fulfill_order(request, session)
+    # Passed signature verification
+    return HttpResponse(status=200)
+
+
+def fulfill_order(request, session):
+    # Fulfill the purchase...
+    payment_id = session["id"]
+    payment_intent_id = session["payment_intent"]
+    user_id = session["metadata"]["user_id"]
+    order_id = session["metadata"]["order_id"]
+    total_amount_temp = session["amount_total"]
+    # Paise to Rupees Conversion
+    total_amount_final = int(total_amount_temp) // 100
+    user_main = User.objects.get(id=user_id)
+    order = Order.objects.get(id=order_id)
+    # Create Payment
+    payment = Payment()
+    payment.stripe_payment_id = payment_id
+    payment.stripe_payment_intent_id = payment_intent_id
+    payment.user = user_main
+    payment.amount = total_amount_final
+    payment.save()
+
+    # Assign payment to order
+    order.ordered = True
+    order.payment = payment
+    order.save()
+
+# Testing the latest Stripe API -end
 
 
 class ItemDetailView(DetailView):
@@ -148,7 +327,7 @@ class ItemDetailView(DetailView):
     template_name = "product.html"
 
 
-@login_required
+@ login_required
 def add_to_cart(request, slug):
     item = get_object_or_404(Item, slug=slug)
     order_item, created = OrderItem.objects.get_or_create(
