@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 from django.shortcuts import reverse
 from django_countries.fields import CountryField
+
 CATEGORY_CHOICES = (
     ('S', 'Shirt'),
     ('SW', 'Sport Wear'),
@@ -23,6 +24,7 @@ class Item(models.Model):
     label = models.CharField(choices=LABEL_CHOICES, max_length=1)
     slug = models.SlugField()
     description = models.TextField()
+    image = models.ImageField()
 
     def __str__(self):
         return self.title
@@ -31,7 +33,8 @@ class Item(models.Model):
         return reverse("core:product", kwargs={
             'slug': self.slug
         })
-        # In core:product, product here is the name specified of product url in urls.py
+        # In core:product, product here is the name
+        # specified of product url in urls.py
 
     def get_add_to_cart_url(self):
         return reverse("core:add-to-cart", kwargs={
@@ -62,7 +65,8 @@ class OrderItem(models.Model):
         return self.quantity * self.item.discount_price
 
     def get_total_savings(self):
-        return self.get_total_item_price() - self.get_total_discount_item_price()
+        return (self.get_total_item_price()
+                - self.get_total_discount_item_price())
 
     def get_final_price(self):
         if self.item.discount_price:
@@ -120,3 +124,10 @@ class Payment(models.Model):
 
     def __str__(self):
         return self.user.username
+
+
+class Coupon(models.Model):
+    code = models.CharField(max_length=15)
+
+    def __str__(self):
+        return self.code
