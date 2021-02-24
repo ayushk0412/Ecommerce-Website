@@ -11,7 +11,8 @@ from .views import (
     CheckoutSession,
     PaymentSuccess,
     PaymentCancel,
-    stripe_webhook
+    stripe_webhook,
+    AddCouponView
 )
 
 app_name = "core"
@@ -33,4 +34,5 @@ urlpatterns = [
     path('success/', PaymentSuccess.as_view(), name="payment-success"),
     path('cancel/', PaymentCancel.as_view(), name="payment-cancel"),
     path('webhook/stripe/', stripe_webhook, name='stripe-webhook'),
+    path('add-coupon/', AddCouponView.as_view(), name="add-coupon"),
 ]

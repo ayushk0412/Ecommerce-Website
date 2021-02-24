@@ -10,7 +10,7 @@ from django.contrib import messages
 from django.utils import timezone
 from django.shortcuts import redirect
 from django.views.generic import View, ListView, DetailView, TemplateView
-from .forms import CheckoutForm
+from .forms import CheckoutForm, CouponForm
 from django.shortcuts import render, get_object_or_404
 from .models import (Item,
                      OrderItem,
@@ -52,11 +52,19 @@ class OrderSummaryView(LoginRequiredMixin, View):
 class CheckoutView(View):
     def get(self, *args, **kwargs):
         # form
-        form = CheckoutForm()
-        context = {
-            'form': form
-        }
-        return render(self.request, 'checkout.html', context)
+        try:
+            order = Order.objects.get(user=self.request.user, ordered=False)
+            form = CheckoutForm()
+            context = {
+                'form': form,
+                'couponform': CouponForm(),
+                'object': order,
+            }
+            return render(self.request, 'checkout.html', context)
+
+        except ObjectDoesNotExist:
+            messages.warning(self.request, "You do not have any Active Order.")
+            return redirect("core:checkout")
 
     def post(self, *args, **kwargs):
         form = CheckoutForm(self.request.POST or None)
@@ -313,14 +321,27 @@ def remove_single_item_from_cart(request, slug):
                         slug=slug)
 
 
-def add_coupon(request, code):
+def get_coupon(request, code):
     try:
-        order = Order.objects.get(
-            user=request.user,
-            ordered=False
-        )
         coupon = Coupon.objects.get(code=code)
         return coupon
     except ObjectDoesNotExist:
-        messages.info(request, "You do not have an active order.")
+        messages.info(request, "This coupon does not exist.")
         return("core:checkout")
+
+
+class AddCouponView(View):
+    def post(self, *args, **kwargs):
+        form = CouponForm(self.request.POST or None)
+        if form.is_valid():
+            try:
+                code = form.cleaned_data.get('code')
+                order = Order.objects.get(
+                    user=self.request.user, ordered=False)
+                order.coupon = get_coupon(self.request, code)
+                order.save()
+                messages.success(self.request, "Successfully added coupon")
+                return redirect("core:checkout")
+            except ObjectDoesNotExist:
+                messages.info(self.request, "You do not have an active order")
+                return redirect("core:checkout")

@@ -57,7 +57,12 @@
                 <a href="/" class="btn btn-primary mr-2">Continue Shopping</a>
               </td>
             </tr>
-            {% endfor %} {% if object.get_total %}
+            {% endfor %} {% if object.coupon %}
+            <tr>
+              <td colspan="4"><b>Coupon</b></td>
+              <td><b>-${{object.coupon.amount}}</b></td>
+            </tr>
+            {% endif %} {% if object.get_total %}
             <tr>
               <td colspan="4"><b>Grand Total</b></td>
               <td><b>${{object.get_total}}</b></td>
