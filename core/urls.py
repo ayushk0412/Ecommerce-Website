@@ -12,7 +12,8 @@ from .views import (
     PaymentSuccess,
     PaymentCancel,
     stripe_webhook,
-    AddCouponView
+    AddCouponView,
+    RequestRefundView,
 )
 
 app_name = "core"
@@ -35,4 +36,7 @@ urlpatterns = [
     path('cancel/', PaymentCancel.as_view(), name="payment-cancel"),
     path('webhook/stripe/', stripe_webhook, name='stripe-webhook'),
     path('add-coupon/', AddCouponView.as_view(), name="add-coupon"),
+    path('request-refund/',
+         RequestRefundView.as_view(), name='request-refund'),
+
 ]

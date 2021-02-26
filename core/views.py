@@ -10,16 +10,25 @@ from django.contrib import messages
 from django.utils import timezone
 from django.shortcuts import redirect
 from django.views.generic import View, ListView, DetailView, TemplateView
-from .forms import CheckoutForm, CouponForm
+from .forms import (CheckoutForm,
+                    CouponForm,
+                    RefundForm)
 from django.shortcuts import render, get_object_or_404
 from .models import (Item,
                      OrderItem,
                      Order,
                      BillingAddress,
                      Payment,
-                     Coupon)
-
+                     Coupon,
+                     Refund,)
+import random
+import string
 stripe.api_key = settings.STRIPE_SECRET_KEY
+
+
+def create_ref_code():
+    return ''.join(random.choices(
+        string.ascii_lowercase + string.digits, k=14))
 
 
 def Items_list(request):
@@ -157,6 +166,8 @@ class CheckoutSession(View):
                 'user': self.request.user,
                 'user_id': self.request.user.id,
                 'order_id': order.id,
+                'coupon': order.coupon,
+                'coupon_amount': order.coupon.amount,
             },
             mode='payment',
             success_url=YOUR_DOMAIN + 'success',
@@ -197,6 +208,8 @@ def fulfill_order(request, session):
     user_id = session["metadata"]["user_id"]
     order_id = session["metadata"]["order_id"]
     total_amount_temp = session["amount_total"]
+    coupon = session["metadata"]["coupon"]
+    coupon_amount = session["metadata"]["coupon_amount"]
     # Paise to Rupees Conversion
     total_amount_final = int(total_amount_temp) // 100
     user_main = User.objects.get(id=user_id)
@@ -207,6 +220,8 @@ def fulfill_order(request, session):
     payment.stripe_payment_intent_id = payment_intent_id
     payment.user = user_main
     payment.amount = total_amount_final
+    payment.coupon = coupon
+    payment.coupon_amount = coupon_amount
     payment.save()
 
     # Setting ordered is True for all ordered Items
@@ -218,6 +233,7 @@ def fulfill_order(request, session):
     # Assign payment to order
     order.ordered = True
     order.payment = payment
+    order.ref_code = create_ref_code()
     order.save()
 
 # Latest Stripe API -end
@@ -345,3 +361,38 @@ class AddCouponView(View):
             except ObjectDoesNotExist:
                 messages.info(self.request, "You do not have an active order")
                 return redirect("core:checkout")
+
+
+class RequestRefundView(View):
+    def get(self, *args, **kwargs):
+        form = RefundForm()
+        context = {
+            'form': form
+        }
+        return render(self.request, "request_refund.html", context)
+
+    def post(self, *args, **kwargs):
+        form = RefundForm(self.request.POST)
+        if form.is_valid():
+            ref_code = form.cleaned_data.get('ref_code')
+            message = form.cleaned_data.get('message')
+            email = form.cleaned_data.get('email')
+            # edit the order
+            try:
+                order = Order.objects.get(ref_code=ref_code)
+                order.refund_requested = True
+                order.save()
+
+                # store the refund
+                refund = Refund()
+                refund.order = order
+                refund.reason = message
+                refund.email = email
+                refund.save()
+
+                messages.info(self.request, "Your request was received.")
+                return redirect("core:request-refund")
+
+            except ObjectDoesNotExist:
+                messages.info(self.request, "This order does not exist.")
+                return redirect("core:request-refund")
